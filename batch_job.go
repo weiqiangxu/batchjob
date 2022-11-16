@@ -32,7 +32,7 @@ func NewConsumer(ctx context.Context) Consumer {
 	return &ConsumerClient{
 		ctx:          ctx,
 		wg:           sync.WaitGroup{},
-		speedControl: make(chan token),
+		speedControl: make(chan token, 1),
 		stop:         make(chan bool),
 		taskIndex:    0,
 	}
@@ -56,7 +56,9 @@ func (g *ConsumerClient) AddTask(f func() error) {
 	g.wg.Add(1)
 	go func(currentIndex int) {
 		errTips := fmt.Errorf("task index=%d timeout", currentIndex)
-		defer g.wg.Done()
+		defer func() {
+			g.wg.Done()
+		}()
 		<-g.stop
 		select {
 		case <-g.ctx.Done():
@@ -70,19 +72,21 @@ func (g *ConsumerClient) AddTask(f func() error) {
 				}()
 				complete := make(chan bool)
 				go func() {
+					defer close(complete)
 					if err := f(); err != nil {
-						g.errMessages.Store(g.taskIndex, err)
-						complete <- true
+						select {
+						case <-g.ctx.Done():
+						default:
+							g.errMessages.Store(g.taskIndex, err)
+						}
 					}
 				}()
-				for {
-					select {
-					case <-complete:
-						return
-					case <-g.ctx.Done():
-						g.errMessages.Store(g.taskIndex, errTips)
-						return
-					}
+				select {
+				case <-complete:
+					return
+				case <-g.ctx.Done():
+					g.errMessages.Store(g.taskIndex, errTips)
+					return
 				}
 			}()
 		}
@@ -91,9 +95,7 @@ func (g *ConsumerClient) AddTask(f func() error) {
 
 // Limit Set parallel quantity
 func (g *ConsumerClient) Limit(n int) {
-	if n <= 0 {
-		g.speedControl = make(chan token, 1)
-		return
+	if n > 0 {
+		g.speedControl = make(chan token, n)
 	}
-	g.speedControl = make(chan token, n)
 }

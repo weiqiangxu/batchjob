@@ -62,3 +62,44 @@ func TestWithContext(t *testing.T) {
 		})
 	}
 }
+
+func TestWithContext2(t *testing.T) {
+	type args struct {
+		ctx context.Context
+	}
+	tests := []struct {
+		name  string
+		args  args
+		want  *ConsumerClient
+		want1 context.Context
+	}{
+		{
+			name: "test",
+			args: args{
+				ctx: context.Background(),
+			},
+			want:  nil,
+			want1: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var consumer Consumer
+			consumer = NewConsumer(tt.args.ctx)
+			consumer.AddTask(func() error {
+				log.Println("hello john")
+				return nil
+			})
+			consumer.AddTask(func() error {
+				log.Println("hello rose")
+				return nil
+			})
+			err := consumer.Run()
+			if len(err) != 0 {
+				for _, e := range err {
+					t.Errorf("err is %#v", e.Error())
+				}
+			}
+		})
+	}
+}
